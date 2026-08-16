@@ -25,9 +25,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
       ? exception.getResponse()
       : { message: 'Erro interno do servidor' };
 
+    const requestId = String(request.headers['x-request-id'] ?? '');
+
     if (!isHttpException) {
       this.logger.error(
-        `Unhandled exception on ${request.method} ${request.url}`,
+        `Unhandled exception on ${request.method} ${request.url} [requestId=${requestId}]`,
         exception instanceof Error ? exception.stack : undefined,
       );
     }
@@ -35,6 +37,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     response.status(status).json({
       statusCode: status,
       path: request.url,
+      requestId,
       timestamp: new Date().toISOString(),
       ...(typeof body === 'object' ? body : { message: body }),
     });

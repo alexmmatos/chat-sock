@@ -1,4 +1,5 @@
 import {
+  Logger,
   UseFilters,
   UseGuards,
   UsePipes,
@@ -20,6 +21,7 @@ import { WsChatException } from '../common/exceptions/ws-chat.exception';
 import { WsExceptionFilter } from '../common/filters/ws-exception.filter';
 import { WsJwtGuard } from '../common/guards/ws-jwt.guard';
 import { AuthenticatedSocketData } from '../common/interfaces/authenticated-socket-data.interface';
+import { MetricsService } from '../health/metrics.service';
 import { PresenceService } from '../presence/presence.service';
 import { ChatService } from './chat.service';
 import { MessageAckDto } from './dto/message-ack.dto';
@@ -48,6 +50,8 @@ import { AckWaitService } from './state/ack-wait.service';
   }),
 )
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+  private readonly logger = new Logger(ChatGateway.name);
+
   @WebSocketServer()
   server: Server;
 
@@ -56,27 +60,39 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly presenceService: PresenceService,
     private readonly chatService: ChatService,
     private readonly ackWaitService: AckWaitService,
+    private readonly metricsService: MetricsService,
   ) {}
 
   async handleConnection(client: Socket): Promise<void> {
     try {
       const payload = await this.wsAuthService.authenticate(client);
       (client.data as AuthenticatedSocketData).userId = payload.sub;
+      this.metricsService.websocketConnectionsActive.inc();
 
       const justCameOnline = this.presenceService.registerConnection(
         payload.sub,
         client.id,
       );
+      this.logger.log(
+        `Conexão autenticada: userId=${payload.sub} socketId=${client.id}`,
+      );
       if (justCameOnline) {
         this.notifyPresenceChanged(payload.sub, true);
       }
     } catch {
+      this.logger.warn(`Conexão rejeitada: socketId=${client.id}`);
       client.disconnect(true);
     }
   }
 
   handleDisconnect(client: Socket): void {
     const result = this.presenceService.removeConnection(client.id);
+    if (result) {
+      this.metricsService.websocketConnectionsActive.dec();
+      this.logger.log(
+        `Desconexão: userId=${result.userId} socketId=${client.id}`,
+      );
+    }
     if (result?.wentOffline) {
       this.notifyPresenceChanged(result.userId, false);
     }
@@ -94,7 +110,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
+    this.metricsService.messagesSentTotal.inc();
+
     if (outcome.kind === 'offline') {
+      this.metricsService.messagesFailedTotal.inc({
+        reason: 'RECIPIENT_OFFLINE',
+      });
       const payload: MessageFailedPayload = {
         clientMessageId: outcome.clientMessageId,
         recipientId: outcome.recipientId,
@@ -115,8 +136,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         senderId: outcome.senderId,
         clientMessageId: outcome.clientMessageId,
         recipientId: outcome.recipientId,
+        sentAt: outcome.payload.sentAt,
       },
       (entry) => {
+        this.metricsService.messagesFailedTotal.inc({ reason: 'ACK_TIMEOUT' });
         const payload: MessageFailedPayload = {
           clientMessageId: entry.clientMessageId,
           recipientId: entry.recipientId,
@@ -136,6 +159,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!entry) {
       return;
     }
+
+    this.metricsService.messagesDeliveredTotal.inc();
+    this.metricsService.messageDeliveryDurationMs.observe(
+      Date.now() - Date.parse(entry.sentAt),
+    );
 
     this.server
       .to(this.presenceService.getSocketIds(entry.senderId))
