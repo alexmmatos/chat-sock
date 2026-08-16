@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>P2P Chat — Cliente de demonstração</title>
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+      fieldset { margin-bottom: 1rem; }
+      label { display: block; margin-top: 0.5rem; font-size: 0.9rem; }
+      input, textarea { width: 100%; box-sizing: border-box; padding: 0.4rem; }
+      button { margin-top: 0.5rem; padding: 0.4rem 1rem; cursor: pointer; }
+      #status { font-weight: bold; }
+      #status.connected { color: green; }
+      #status.disconnected { color: #999; }
+      #status.error { color: red; }
+      #log { border: 1px solid #ccc; padding: 0.5rem; height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.85rem; white-space: pre-wrap; }
+      .log-in { color: #0a6; }
+      .log-out { color: #06a; }
+      .log-err { color: #c00; }
+    </style>
+  </head>
+  <body>
+    <h1>P2P Chat — Cliente de demonstração</h1>
+    <p>Não substitui os testes automatizados (ver <code>specs/09-testing.md</code>). Só para inspecionar o protocolo manualmente.</p>
+
+    <fieldset>
+      <legend>Conexão</legend>
+      <label>URL da API<input id="apiUrl" value="http://localhost:3000" /></label>
+      <label>JWT<input id="jwt" placeholder="token retornado por POST /auth/login" /></label>
+      <button id="connectBtn">Conectar</button>
+      <button id="disconnectBtn" disabled>Desconectar</button>
+      <p>Status: <span id="status" class="disconnected">desconectado</span></p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Enviar mensagem</legend>
+      <label>ID do destinatário (UUID)<input id="recipientId" /></label>
+      <label>Conteúdo<textarea id="content" rows="2"></textarea></label>
+      <button id="sendBtn" disabled>Enviar</button>
+      <button id="presenceBtn" disabled>Consultar presença do destinatário</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Log</legend>
+      <div id="log"></div>
+    </fieldset>
+
+    <script>
+      let socket = null;
+
+      const statusEl = document.getElementById('status');
+      const logEl = document.getElementById('log');
+      const connectBtn = document.getElementById('connectBtn');
+      const disconnectBtn = document.getElementById('disconnectBtn');
+      const sendBtn = document.getElementById('sendBtn');
+      const presenceBtn = document.getElementById('presenceBtn');
+
+      function log(direction, text) {
+        const line = document.createElement('div');
+        line.className = direction === 'in' ? 'log-in' : direction === 'out' ? 'log-out' : 'log-err';
+        const prefix = direction === 'in' ? '← ' : direction === 'out' ? '→ ' : '⚠ ';
+        line.textContent = `[${new Date().toLocaleTimeString()}] ${prefix}${text}`;
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      function setStatus(state, text) {
+        statusEl.className = state;
+        statusEl.textContent = text;
+        const connected = state === 'connected';
+        connectBtn.disabled = connected;
+        disconnectBtn.disabled = !connected;
+        sendBtn.disabled = !connected;
+        presenceBtn.disabled = !connected;
+      }
+
+      function uuid() {
+        return crypto.randomUUID();
+      }
+
+      connectBtn.addEventListener('click', () => {
+        const url = document.getElementById('apiUrl').value.trim();
+        const token = document.getElementById('jwt').value.trim();
+        if (!url || !token) {
+          log('err', 'Informe URL da API e JWT antes de conectar.');
+          return;
+        }
+
+        socket = io(url, { auth: { token } });
+
+        socket.on('connect', () => {
+          setStatus('connected', `conectado (socket ${socket.id})`);
+          log('in', 'connect');
+        });
+
+        socket.on('connect_error', (err) => {
+          setStatus('error', `erro de conexão: ${err.message}`);
+          log('err', `connect_error: ${err.message}`);
+        });
+
+        socket.on('disconnect', (reason) => {
+          setStatus('disconnected', `desconectado (${reason})`);
+          log('in', `disconnect: ${reason}`);
+        });
+
+        socket.on('message:received', (msg) => {
+          log('in', `message:received de ${msg.sender.name} (${msg.sender.id}): "${msg.content}"`);
+          socket.emit('message:ack', { messageId: msg.messageId });
+          log('out', `message:ack ${msg.messageId}`);
+        });
+
+        socket.on('message:delivered', (msg) => {
+          log('in', `message:delivered ${msg.messageId} (recipientId=${msg.recipientId})`);
+        });
+
+        socket.on('message:failed', (msg) => {
+          log('in', `message:failed [${msg.code}] recipientId=${msg.recipientId}: ${msg.message}`);
+        });
+
+        socket.on('chat:error', (err) => {
+          log('err', `chat:error [${err.code}] ${err.message}`);
+        });
+
+        socket.on('presence:changed', (p) => {
+          log('in', `presence:changed userId=${p.userId} online=${p.online}`);
+        });
+      });
+
+      disconnectBtn.addEventListener('click', () => {
+        socket?.disconnect();
+      });
+
+      sendBtn.addEventListener('click', () => {
+        const recipientId = document.getElementById('recipientId').value.trim();
+        const content = document.getElementById('content').value;
+        const clientMessageId = uuid();
+
+        socket.emit('message:send', { clientMessageId, recipientId, content });
+        log('out', `message:send ${clientMessageId} → ${recipientId}: "${content}"`);
+      });
+
+      presenceBtn.addEventListener('click', () => {
+        const userId = document.getElementById('recipientId').value.trim();
+        socket.emit('presence:check', { userId }, (response) => {
+          log('in', `presence:check → ${JSON.stringify(response)}`);
+        });
+        log('out', `presence:check ${userId}`);
+      });
+    </script>
+  </body>
+</html>
