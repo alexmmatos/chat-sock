@@ -80,10 +80,8 @@ Swagger, Jest, Docker/Docker Compose.
 npm install
 cp .env.example .env   # ajuste DATABASE_URL para localhost se rodar fora do Docker
 
-# sobe só o Postgres localmente
-docker run -d --name p2p-chat-postgres \
-  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=p2p_chat \
-  -p 5432:5432 postgres:16-alpine
+# sobe só o Postgres, via docker compose
+docker compose up -d postgres
 
 npx prisma migrate deploy
 npm run start:dev
