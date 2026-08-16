@@ -1,0 +1,14 @@
+node_modules
+dist
+*.tsbuildinfo
+coverage
+.git
+.env
+.env.*
+!.env.example
+*.md
+.vscode
+.idea
+.claude
+specs
+src/generated
