@@ -10,6 +10,7 @@ import {
   MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
@@ -49,7 +50,9 @@ import { AckWaitService } from './state/ack-wait.service';
       ),
   }),
 )
-export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class ChatGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
   private readonly logger = new Logger(ChatGateway.name);
 
   @WebSocketServer()
@@ -63,25 +66,36 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly metricsService: MetricsService,
   ) {}
 
-  async handleConnection(client: Socket): Promise<void> {
-    try {
-      const payload = await this.wsAuthService.authenticate(client);
-      (client.data as AuthenticatedSocketData).userId = payload.sub;
-      this.metricsService.websocketConnectionsActive.inc();
+  // Autenticação roda como middleware do Socket.IO (antes do handshake ser
+  // confirmado ao cliente), não em handleConnection — se fosse em
+  // handleConnection (assíncrono, depois do 'connect' já ter disparado no
+  // cliente), um evento emitido logo após conectar poderia chegar antes de
+  // client.data.userId estar definido.
+  afterInit(server: Server): void {
+    server.use((client: Socket, next: (err?: Error) => void) => {
+      this.wsAuthService
+        .authenticate(client)
+        .then((payload) => {
+          (client.data as AuthenticatedSocketData).userId = payload.sub;
+          next();
+        })
+        .catch(() => next(new Error('UNAUTHORIZED')));
+    });
+  }
 
-      const justCameOnline = this.presenceService.registerConnection(
-        payload.sub,
-        client.id,
-      );
-      this.logger.log(
-        `Conexão autenticada: userId=${payload.sub} socketId=${client.id}`,
-      );
-      if (justCameOnline) {
-        this.notifyPresenceChanged(payload.sub, true);
-      }
-    } catch {
-      this.logger.warn(`Conexão rejeitada: socketId=${client.id}`);
-      client.disconnect(true);
+  handleConnection(client: Socket): void {
+    const userId = (client.data as AuthenticatedSocketData).userId;
+    this.metricsService.websocketConnectionsActive.inc();
+
+    const justCameOnline = this.presenceService.registerConnection(
+      userId,
+      client.id,
+    );
+    this.logger.log(
+      `Conexão autenticada: userId=${userId} socketId=${client.id}`,
+    );
+    if (justCameOnline) {
+      this.notifyPresenceChanged(userId, true);
     }
   }
 
