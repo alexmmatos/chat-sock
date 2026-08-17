@@ -32,7 +32,7 @@ import { MessageFailedPayload } from './interfaces/message-failed.interface';
 import { AckWaitService } from './state/ack-wait.service';
 
 // Decorators de gateway são avaliados antes da injeção de dependência existir,
-// então CORS do WS não pode vir do ConfigService aqui — só process.env direto.
+// então CORS do WS não pode vir do ConfigService aqui, só process.env direto.
 @WebSocketGateway({ cors: { origin: process.env.CORS_ORIGIN } })
 @UseFilters(WsExceptionFilter)
 @UseGuards(WsJwtGuard)
@@ -67,7 +67,7 @@ export class ChatGateway
   ) {}
 
   // Autenticação roda como middleware do Socket.IO (antes do handshake ser
-  // confirmado ao cliente), não em handleConnection — se fosse em
+  // confirmado ao cliente), não em handleConnection: se fosse em
   // handleConnection (assíncrono, depois do 'connect' já ter disparado no
   // cliente), um evento emitido logo após conectar poderia chegar antes de
   // client.data.userId estar definido.

@@ -120,7 +120,7 @@ describe('Chat gateway (e2e)', () => {
     expect(delivered.recipientId).toBe(b.id);
   });
 
-  it('não confia no senderId enviado pelo cliente — payload com campo extra é rejeitado, nunca usado para forjar identidade', async () => {
+  it('não confia no senderId enviado pelo cliente: payload com campo extra é rejeitado, nunca usado para forjar identidade', async () => {
     const a = await registerUser('A', 'forge-a');
     const b = await registerUser('B', 'forge-b');
     const victim = await registerUser('V', 'forge-v');
@@ -144,8 +144,8 @@ describe('Chat gateway (e2e)', () => {
       senderId: victim.id,
     });
 
-    // whitelist/forbidNonWhitelisted rejeita o campo extra inteiro (VALIDATION_ERROR) —
-    // em nenhum caso a mensagem chega a B com a identidade forjada de "victim".
+    // whitelist/forbidNonWhitelisted rejeita o campo extra inteiro (VALIDATION_ERROR).
+    // Em nenhum caso a mensagem chega a B com a identidade forjada de "victim".
     const error = await errorPromise;
     expect(error.code).toBe('VALIDATION_ERROR');
 

@@ -29,13 +29,13 @@ async function bootstrap() {
     .setTitle('P2P Chat API')
     .setDescription(
       'API de chat individual (P2P mediado por servidor) em tempo real. ' +
-        'Não existem salas, grupos, canais, histórico ou persistência de mensagens — ' +
+        'Não existem salas, grupos, canais, histórico ou persistência de mensagens: ' +
         'o conteúdo trafega apenas durante a transmissão via WebSocket. ' +
         'Fluxo de chat: cliente conecta ao WebSocket com o JWT emitido por /auth/login, ' +
         'emite message:send, o destinatário recebe message:received e confirma com ' +
         'message:ack, e o remetente recebe message:delivered (ou message:failed se o ' +
         'destinatário estiver offline ou não confirmar a tempo). Eventos WebSocket não ' +
-        'aparecem nas rotas abaixo — são documentados em specs/03-chat-gateway.md e no README.',
+        'aparecem nas rotas abaixo; são documentados em specs/03-chat-gateway.md e no README.',
     )
     .setVersion('1.0')
     .addBearerAuth()
